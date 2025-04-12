@@ -10,6 +10,6 @@ func main() {
 	repo := bass.NewMemRepo()
 	h := bass.NewHandler(repo)
 
-	err := http.ListenAndServe(":8080", h)
-	panic(fmt.Errorf("error on listen and serve http: %v", err))
+	err := http.ListenAndServe(":8080", h) //nolint:gosec
+	panic(fmt.Errorf("error on listen and serve http: %w", err))
 }

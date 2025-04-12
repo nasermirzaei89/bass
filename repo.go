@@ -15,7 +15,7 @@ type Resource interface {
 type genericResource map[string]any
 
 func (r genericResource) Name() string {
-	return r["name"].(string)
+	return r["name"].(string) //nolint:forcetypeassert
 }
 
 type ResourceList struct {
@@ -122,5 +122,8 @@ func (repo *MemRepo) Delete(_ context.Context, itemName string) error {
 var _ ResourcesRepository = (*MemRepo)(nil)
 
 func NewMemRepo() *MemRepo {
-	return &MemRepo{db: make(map[string]Resource)}
+	return &MemRepo{
+		db:    make(map[string]Resource),
+		Mutex: sync.Mutex{},
+	}
 }
