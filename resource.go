@@ -137,7 +137,7 @@ func (repo *MemRepo) Replace(_ context.Context, item Resource) error {
 	itemName := item.Name()
 	itemKind := item.Kind()
 
-	item, ok := repo.get(itemKind, itemName)
+	_, ok := repo.get(itemKind, itemName)
 	if !ok {
 		return ResourceNotFoundError{
 			Kind: itemKind,

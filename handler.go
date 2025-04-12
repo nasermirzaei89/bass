@@ -3,10 +3,12 @@ package bass
 import (
 	"encoding/json"
 	"errors"
+	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/gertd/go-pluralize"
 	"github.com/nasermirzaei89/respond"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
+	"io"
 	"net/http"
 )
 
@@ -163,8 +165,164 @@ func (h *Handler) handleReplaceResource() http.HandlerFunc {
 }
 
 func (h *Handler) handlePatchResource() http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotImplemented)
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("Content-Type") {
+		case "application/json-patch+json":
+			h.handleJSONPatchResource()(w, r)
+		case "application/merge-patch+json":
+			h.handleMergePatchResource()(w, r)
+		default:
+			w.WriteHeader(http.StatusUnsupportedMediaType)
+		}
+	}
+}
+
+func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rkp := r.PathValue("resourceKindPlural")
+		itemKind := cases.Title(language.English).String(h.pluralizeClient.Singular(rkp))
+		itemName := r.PathValue("name")
+
+		currentItem, err := h.repo.Get(r.Context(), itemKind, itemName)
+		if err != nil {
+			var resourceNotFoundError ResourceNotFoundError
+
+			switch {
+			case errors.As(err, &resourceNotFoundError):
+				w.WriteHeader(http.StatusNotFound)
+			default:
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+
+			return
+		}
+
+		patch, err := jsonpatch.DecodePatch(body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+
+			return
+		}
+
+		original, err := json.Marshal(currentItem)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		modified, err := patch.Apply(original)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		var newItem genericResource
+
+		err = json.Unmarshal(modified, &newItem)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		newItem["name"] = itemName
+		newItem["kind"] = itemKind
+
+		err = h.repo.Replace(r.Context(), newItem)
+		if err != nil {
+			var resourceNotFoundError ResourceNotFoundError
+
+			switch {
+			case errors.As(err, &resourceNotFoundError):
+				w.WriteHeader(http.StatusNotFound)
+			default:
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+
+			return
+		}
+
+		respond.Done(w, r, newItem)
+	}
+}
+
+func (h *Handler) handleMergePatchResource() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rkp := r.PathValue("resourceKindPlural")
+		itemKind := cases.Title(language.English).String(h.pluralizeClient.Singular(rkp))
+		itemName := r.PathValue("name")
+
+		currentItem, err := h.repo.Get(r.Context(), itemKind, itemName)
+		if err != nil {
+			var resourceNotFoundError ResourceNotFoundError
+
+			switch {
+			case errors.As(err, &resourceNotFoundError):
+				w.WriteHeader(http.StatusNotFound)
+			default:
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+
+			return
+		}
+
+		original, err := json.Marshal(currentItem)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		modified, err := jsonpatch.MergePatch(original, body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		var newItem genericResource
+
+		err = json.Unmarshal(modified, &newItem)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		newItem["name"] = itemName
+		newItem["kind"] = itemKind
+
+		err = h.repo.Replace(r.Context(), newItem)
+		if err != nil {
+			var resourceNotFoundError ResourceNotFoundError
+
+			switch {
+			case errors.As(err, &resourceNotFoundError):
+				w.WriteHeader(http.StatusNotFound)
+			default:
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+
+			return
+		}
+
+		respond.Done(w, r, newItem)
 	}
 }
 

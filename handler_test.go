@@ -18,7 +18,8 @@ func TestAPI(t *testing.T) {
 	repo := bass.NewMemRepo()
 	h := bass.NewHandler(repo)
 
-	t.Run("list empty repo", func(t *testing.T) {
+	// list empty repo
+	{
 		req := httptest.NewRequest(http.MethodGet, "/foos", nil)
 		rec := httptest.NewRecorder()
 
@@ -41,9 +42,10 @@ func TestAPI(t *testing.T) {
 		kind, ok := res["kind"]
 		require.True(t, ok)
 		assert.Equal(t, "FooList", kind)
-	})
+	}
 
-	t.Run("add item", func(t *testing.T) {
+	// add item
+	{
 		body := bytes.NewBufferString(`{"name": "foo1", "bar": 1, "baz": true}`)
 		req := httptest.NewRequest(http.MethodPost, "/foos", body)
 
@@ -53,9 +55,10 @@ func TestAPI(t *testing.T) {
 
 		assert.Equal(t, http.StatusCreated, rec.Code)
 		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
-	})
+	}
 
-	t.Run("list after add", func(t *testing.T) {
+	// list after add
+	{
 		req := httptest.NewRequest(http.MethodGet, "/foos", nil)
 		rec := httptest.NewRecorder()
 
@@ -74,9 +77,10 @@ func TestAPI(t *testing.T) {
 		require.True(t, ok)
 		assert.NotNil(t, items)
 		assert.Len(t, items, 1)
-	})
+	}
 
-	t.Run("add duplicate item", func(t *testing.T) {
+	// add duplicate item
+	{
 		body := bytes.NewBufferString(`{"name": "foo1", "bar": 1, "baz": true}`)
 		req := httptest.NewRequest(http.MethodPost, "/foos", body)
 
@@ -85,9 +89,10 @@ func TestAPI(t *testing.T) {
 		h.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusConflict, rec.Code)
-	})
+	}
 
-	t.Run("add invalid item", func(t *testing.T) {
+	// add invalid item
+	{
 		body := bytes.NewBufferString(`[{"name": "foo1", "bar": 1, "baz": true}]`)
 		req := httptest.NewRequest(http.MethodPost, "/foos", body)
 
@@ -96,9 +101,10 @@ func TestAPI(t *testing.T) {
 		h.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
-	})
+	}
 
-	t.Run("add item without name", func(t *testing.T) {
+	// add item without name
+	{
 		body := bytes.NewBufferString(`{"bar": 1, "baz": true}`)
 		req := httptest.NewRequest(http.MethodPost, "/foos", body)
 		rec := httptest.NewRecorder()
@@ -106,9 +112,10 @@ func TestAPI(t *testing.T) {
 		h.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
-	})
+	}
 
-	t.Run("get item", func(t *testing.T) {
+	// get item
+	{
 		req := httptest.NewRequest(http.MethodGet, "/foos/foo1", nil)
 		rec := httptest.NewRecorder()
 
@@ -125,18 +132,20 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, "foo1", res["name"])
 		assert.EqualValues(t, 1, res["bar"])
 		assert.Equal(t, true, res["baz"])
-	})
+	}
 
-	t.Run("get unknown item", func(t *testing.T) {
+	// get unknown item
+	{
 		req := httptest.NewRequest(http.MethodGet, "/foos/foo404", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusNotFound, rec.Code)
-	})
+	}
 
-	t.Run("update item", func(t *testing.T) {
+	// update item
+	{
 		body := bytes.NewBufferString(`{"name": "foo1", "bar": 2, "baz": false}`)
 		req := httptest.NewRequest(http.MethodPut, "/foos/foo1", body)
 		rec := httptest.NewRecorder()
@@ -154,9 +163,10 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, "foo1", res["name"])
 		assert.EqualValues(t, 2, res["bar"])
 		assert.Equal(t, false, res["baz"])
-	})
+	}
 
-	t.Run("update unknown item", func(t *testing.T) {
+	// update unknown item
+	{
 		body := bytes.NewBufferString(`{"name": "foo404", "bar": 2, "baz": false}`)
 		req := httptest.NewRequest(http.MethodPut, "/foos/foo404", body)
 		rec := httptest.NewRecorder()
@@ -164,9 +174,10 @@ func TestAPI(t *testing.T) {
 		h.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusNotFound, rec.Code)
-	})
+	}
 
-	t.Run("update invalid item", func(t *testing.T) {
+	// update invalid item
+	{
 		body := bytes.NewBufferString(`[{"name": "foo1", "bar": 2, "baz": true}]`)
 		req := httptest.NewRequest(http.MethodPut, "/foos/foo1", body)
 		rec := httptest.NewRecorder()
@@ -174,9 +185,10 @@ func TestAPI(t *testing.T) {
 		h.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
-	})
+	}
 
-	t.Run("update item without name", func(t *testing.T) {
+	// update item without name
+	{
 		body := bytes.NewBufferString(`{"bar": 3, "baz": true}`)
 		req := httptest.NewRequest(http.MethodPut, "/foos/foo1", body)
 		rec := httptest.NewRecorder()
@@ -194,25 +206,79 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, "foo1", res["name"])
 		assert.EqualValues(t, 3, res["bar"])
 		assert.Equal(t, true, res["baz"])
-	})
+	}
 
-	t.Run("patch item", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPatch, "/foos/foo1", nil)
+	// json patch item
+	{
+		body := bytes.NewBufferString(`[
+{"op": "add", "path": "/bad", "value": {}},
+{"op": "add", "path": "/bad/bag", "value": "wiz"},
+{"op": "replace", "path": "/bar", "value": 4},{"op": "remove", "path": "/baz"}
+]`)
+		req := httptest.NewRequest(http.MethodPatch, "/foos/foo1", body)
+		req.Header.Set("Content-Type", "application/json-patch+json")
+
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 
-		assert.Equal(t, http.StatusNotImplemented, rec.Code)
-	})
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
 
-	t.Run("delete item", func(t *testing.T) {
+		var res map[string]any
+
+		err := json.NewDecoder(rec.Body).Decode(&res)
+		require.NoError(t, err)
+
+		assert.Contains(t, res["bad"], "bag")
+		assert.EqualValues(t, 4, res["bar"])
+		assert.NotContains(t, res, "baz")
+	}
+
+	// merge patch item
+	{
+		body := bytes.NewBufferString(`{"bal":"Bally", "bar": null}`)
+		req := httptest.NewRequest(http.MethodPatch, "/foos/foo1", body)
+		req.Header.Set("Content-Type", "application/merge-patch+json")
+
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
+
+		var res map[string]any
+
+		err := json.NewDecoder(rec.Body).Decode(&res)
+		require.NoError(t, err)
+
+		assert.Contains(t, res["bad"], "bag")
+		assert.NotContains(t, res, "bar")
+		assert.Equal(t, "Bally", res["bal"])
+	}
+
+	// unsupported patch item
+	{
+		body := bytes.NewBufferString(`{"bal":"Bally", "bar": null}`)
+		req := httptest.NewRequest(http.MethodPatch, "/foos/foo1", body)
+		req.Header.Set("Content-Type", "application/json")
+
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusUnsupportedMediaType, rec.Code)
+	}
+
+	// delete item
+	{
 		req := httptest.NewRequest(http.MethodDelete, "/foos/foo1", nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusNoContent, rec.Code)
-	})
+	}
 
-	t.Run("list after delete", func(t *testing.T) {
+	// list after delete
+	{
 		req := httptest.NewRequest(http.MethodGet, "/foos", nil)
 		rec := httptest.NewRecorder()
 
@@ -231,22 +297,24 @@ func TestAPI(t *testing.T) {
 		require.True(t, ok)
 		assert.NotNil(t, items)
 		assert.Empty(t, items)
-	})
+	}
 
-	t.Run("get deleted item", func(t *testing.T) {
+	// get deleted item
+	{
 		req := httptest.NewRequest(http.MethodGet, "/foos/foo1", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusNotFound, rec.Code)
-	})
+	}
 
-	t.Run("delete unknown item", func(t *testing.T) {
+	// delete unknown item
+	{
 		req := httptest.NewRequest(http.MethodDelete, "/foos/foo404", nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusNotFound, rec.Code)
-	})
+	}
 }

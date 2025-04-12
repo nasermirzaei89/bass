@@ -13,6 +13,11 @@ linters:
     - paralleltest
     - tparallel
     - varnamelen
+  settings:
+    cyclop:
+      max-complexity: 12
+    funlen:
+      lines: 75
   exclusions:
     generated: lax
     presets:
@@ -23,6 +28,7 @@ linters:
     rules:
       - linters:
           - funlen
+          - maintidx
         path: _test\.go
     paths:
       - tmp
