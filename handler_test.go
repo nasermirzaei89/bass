@@ -37,6 +37,10 @@ func TestAPI(t *testing.T) {
 		require.True(t, ok)
 		assert.NotNil(t, items)
 		assert.Empty(t, items)
+
+		kind, ok := res["kind"]
+		require.True(t, ok)
+		assert.Equal(t, "FooList", kind)
 	})
 
 	t.Run("add item", func(t *testing.T) {
@@ -49,6 +53,27 @@ func TestAPI(t *testing.T) {
 
 		assert.Equal(t, http.StatusCreated, rec.Code)
 		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
+	})
+
+	t.Run("list after add", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/foos", nil)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
+
+		var res map[string]any
+
+		err := json.NewDecoder(rec.Body).Decode(&res)
+		require.NoError(t, err)
+
+		items, ok := res["items"]
+
+		require.True(t, ok)
+		assert.NotNil(t, items)
+		assert.Len(t, items, 1)
 	})
 
 	t.Run("add duplicate item", func(t *testing.T) {
@@ -171,12 +196,41 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, true, res["baz"])
 	})
 
+	t.Run("patch item", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPatch, "/foos/foo1", nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusNotImplemented, rec.Code)
+	})
+
 	t.Run("delete item", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodDelete, "/foos/foo1", nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusNoContent, rec.Code)
+	})
+
+	t.Run("list after delete", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/foos", nil)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
+
+		var res map[string]any
+
+		err := json.NewDecoder(rec.Body).Decode(&res)
+		require.NoError(t, err)
+
+		items, ok := res["items"]
+
+		require.True(t, ok)
+		assert.NotNil(t, items)
+		assert.Empty(t, items)
 	})
 
 	t.Run("get deleted item", func(t *testing.T) {
