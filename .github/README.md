@@ -1,3 +1,5 @@
+# GitHub Actions
+
 ## Running actions locally
 
 Run `lint` job:
