@@ -1,26 +1,42 @@
+version: "2"
+
 run:
-  timeout: 5m
   modules-download-mode: readonly
   allow-parallel-runners: true
 
 linters:
-  enable-all: true
+  default: all
   disable:
-    - nolintlint
     - depguard
-    - gci
     - ireturn
+    - nolintlint
     - paralleltest
     - tparallel
     - varnamelen
-    - tenv
-    - gofumpt
-    - goimports
-issues:
-  exclude-dirs:
-    - tmp
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - funlen
-linters-settings:
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - funlen
+        path: _test\.go
+    paths:
+      - tmp
+      - third_party$
+      - builtin$
+      - examples$
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax
+    paths:
+      - tmp
+      - third_party$
+      - builtin$
+      - examples$

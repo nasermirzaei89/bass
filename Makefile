@@ -2,7 +2,7 @@
 ROOT=$(realpath $(dir $(lastword $(MAKEFILE_LIST))))
 CGO_ENABLED?=0
 
-# Install by `go get -tool github.com/golangci/golangci-lint/cmd/golangci-lint@<SET VERSION>`
+# Install by `go get -tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint@<SET VERSION>`
 GOLANGCI_LINT_CMD=go tool golangci-lint
 
 # Install by `go get -tool github.com/4meepo/tagalign/cmd/tagalign@<SET VERSION>`
