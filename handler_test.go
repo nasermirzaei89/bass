@@ -20,7 +20,7 @@ func TestAPI(t *testing.T) {
 
 	// list empty repo
 	{
-		req := httptest.NewRequest(http.MethodGet, "/foos", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/foos", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -47,7 +47,7 @@ func TestAPI(t *testing.T) {
 	// add item
 	{
 		body := bytes.NewBufferString(`{"name": "foo1", "bar": 1, "baz": true}`)
-		req := httptest.NewRequest(http.MethodPost, "/foos", body)
+		req := httptest.NewRequest(http.MethodPost, "/api/foos", body)
 
 		rec := httptest.NewRecorder()
 
@@ -59,7 +59,7 @@ func TestAPI(t *testing.T) {
 
 	// list after add
 	{
-		req := httptest.NewRequest(http.MethodGet, "/foos", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/foos", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -82,7 +82,7 @@ func TestAPI(t *testing.T) {
 	// add duplicate item
 	{
 		body := bytes.NewBufferString(`{"name": "foo1", "bar": 1, "baz": true}`)
-		req := httptest.NewRequest(http.MethodPost, "/foos", body)
+		req := httptest.NewRequest(http.MethodPost, "/api/foos", body)
 
 		rec := httptest.NewRecorder()
 
@@ -94,7 +94,7 @@ func TestAPI(t *testing.T) {
 	// add invalid item
 	{
 		body := bytes.NewBufferString(`[{"name": "foo1", "bar": 1, "baz": true}]`)
-		req := httptest.NewRequest(http.MethodPost, "/foos", body)
+		req := httptest.NewRequest(http.MethodPost, "/api/foos", body)
 
 		rec := httptest.NewRecorder()
 
@@ -106,7 +106,7 @@ func TestAPI(t *testing.T) {
 	// add item without name
 	{
 		body := bytes.NewBufferString(`{"bar": 1, "baz": true}`)
-		req := httptest.NewRequest(http.MethodPost, "/foos", body)
+		req := httptest.NewRequest(http.MethodPost, "/api/foos", body)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -116,7 +116,7 @@ func TestAPI(t *testing.T) {
 
 	// get item
 	{
-		req := httptest.NewRequest(http.MethodGet, "/foos/foo1", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/foos/foo1", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -136,7 +136,7 @@ func TestAPI(t *testing.T) {
 
 	// get unknown item
 	{
-		req := httptest.NewRequest(http.MethodGet, "/foos/foo404", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/foos/foo404", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -147,7 +147,7 @@ func TestAPI(t *testing.T) {
 	// update item
 	{
 		body := bytes.NewBufferString(`{"name": "foo1", "bar": 2, "baz": false}`)
-		req := httptest.NewRequest(http.MethodPut, "/foos/foo1", body)
+		req := httptest.NewRequest(http.MethodPut, "/api/foos/foo1", body)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -168,7 +168,7 @@ func TestAPI(t *testing.T) {
 	// update unknown item
 	{
 		body := bytes.NewBufferString(`{"name": "foo404", "bar": 2, "baz": false}`)
-		req := httptest.NewRequest(http.MethodPut, "/foos/foo404", body)
+		req := httptest.NewRequest(http.MethodPut, "/api/foos/foo404", body)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -179,7 +179,7 @@ func TestAPI(t *testing.T) {
 	// update invalid item
 	{
 		body := bytes.NewBufferString(`[{"name": "foo1", "bar": 2, "baz": true}]`)
-		req := httptest.NewRequest(http.MethodPut, "/foos/foo1", body)
+		req := httptest.NewRequest(http.MethodPut, "/api/foos/foo1", body)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -190,7 +190,7 @@ func TestAPI(t *testing.T) {
 	// update item without name
 	{
 		body := bytes.NewBufferString(`{"bar": 3, "baz": true}`)
-		req := httptest.NewRequest(http.MethodPut, "/foos/foo1", body)
+		req := httptest.NewRequest(http.MethodPut, "/api/foos/foo1", body)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -215,7 +215,7 @@ func TestAPI(t *testing.T) {
 {"op": "add", "path": "/bad/bag", "value": "wiz"},
 {"op": "replace", "path": "/bar", "value": 4},{"op": "remove", "path": "/baz"}
 ]`)
-		req := httptest.NewRequest(http.MethodPatch, "/foos/foo1", body)
+		req := httptest.NewRequest(http.MethodPatch, "/api/foos/foo1", body)
 		req.Header.Set("Content-Type", "application/json-patch+json")
 
 		rec := httptest.NewRecorder()
@@ -237,7 +237,7 @@ func TestAPI(t *testing.T) {
 	// merge patch item
 	{
 		body := bytes.NewBufferString(`{"bal":"Bally", "bar": null}`)
-		req := httptest.NewRequest(http.MethodPatch, "/foos/foo1", body)
+		req := httptest.NewRequest(http.MethodPatch, "/api/foos/foo1", body)
 		req.Header.Set("Content-Type", "application/merge-patch+json")
 
 		rec := httptest.NewRecorder()
@@ -259,7 +259,7 @@ func TestAPI(t *testing.T) {
 	// unsupported patch item
 	{
 		body := bytes.NewBufferString(`{"bal":"Bally", "bar": null}`)
-		req := httptest.NewRequest(http.MethodPatch, "/foos/foo1", body)
+		req := httptest.NewRequest(http.MethodPatch, "/api/foos/foo1", body)
 		req.Header.Set("Content-Type", "application/json")
 
 		rec := httptest.NewRecorder()
@@ -270,7 +270,7 @@ func TestAPI(t *testing.T) {
 
 	// delete item
 	{
-		req := httptest.NewRequest(http.MethodDelete, "/foos/foo1", nil)
+		req := httptest.NewRequest(http.MethodDelete, "/api/foos/foo1", nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 
@@ -279,7 +279,7 @@ func TestAPI(t *testing.T) {
 
 	// list after delete
 	{
-		req := httptest.NewRequest(http.MethodGet, "/foos", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/foos", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -301,7 +301,7 @@ func TestAPI(t *testing.T) {
 
 	// get deleted item
 	{
-		req := httptest.NewRequest(http.MethodGet, "/foos/foo1", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/foos/foo1", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -311,7 +311,7 @@ func TestAPI(t *testing.T) {
 
 	// delete unknown item
 	{
-		req := httptest.NewRequest(http.MethodDelete, "/foos/foo404", nil)
+		req := httptest.NewRequest(http.MethodDelete, "/api/foos/foo404", nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 

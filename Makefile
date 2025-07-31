@@ -21,7 +21,7 @@ help: ## Show help
 
 .PHONY: build
 build: .which-go ## Build binary
-	CGO_ENABLED=1 go build -v -o $(ROOT)/bin/api $(ROOT)/cmd/api
+	CGO_ENABLED=1 go build -v -o $(ROOT)/bin/bass $(ROOT)/cmd/bass
 
 .PHONY: format
 format: .which-go ## Format files

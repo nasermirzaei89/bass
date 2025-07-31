@@ -39,12 +39,12 @@ func NewHandler(resourcesRepo ResourcesRepository) *Handler {
 }
 
 func (h *Handler) registerRoutes() {
-	h.mux.Handle("GET /{resourceKindPlural}", h.handleListResources())
-	h.mux.Handle("POST /{resourceKindPlural}", h.handleCreateResource())
-	h.mux.Handle("GET /{resourceKindPlural}/{name}", h.handleGetResource())
-	h.mux.Handle("PUT /{resourceKindPlural}/{name}", h.handleReplaceResource())
-	h.mux.Handle("PATCH /{resourceKindPlural}/{name}", h.handlePatchResource())
-	h.mux.Handle("DELETE /{resourceKindPlural}/{name}", h.handleDeleteResource())
+	h.mux.Handle("GET /api/{resourceKindPlural}", h.handleListResources())
+	h.mux.Handle("POST /api/{resourceKindPlural}", h.handleCreateResource())
+	h.mux.Handle("GET /api/{resourceKindPlural}/{name}", h.handleGetResource())
+	h.mux.Handle("PUT /api/{resourceKindPlural}/{name}", h.handleReplaceResource())
+	h.mux.Handle("PATCH /api/{resourceKindPlural}/{name}", h.handlePatchResource())
+	h.mux.Handle("DELETE /api/{resourceKindPlural}/{name}", h.handleDeleteResource())
 }
 
 func (h *Handler) handleListResources() http.HandlerFunc {
