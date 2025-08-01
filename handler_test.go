@@ -2,25 +2,100 @@ package bass_test
 
 import (
 	"bytes"
-	"encoding/json"
-	"github.com/nasermirzaei89/bass"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/nasermirzaei89/bass"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAPI(t *testing.T) {
-	t.Parallel()
+	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	repo := bass.NewMemRepo()
 	h := bass.NewHandler(repo)
 
+	type FooBad struct {
+		Bag string `json:"bag"`
+	}
+
+	type Foo struct {
+		Metadata bass.Metadata `json:"metadata"`
+		Bar      *int          `json:"bar,omitempty"`
+		Baz      bool          `json:"baz"`
+		Bad      *FooBad       `json:"bad,omitempty"`
+		Bal      *string       `json:"bal,omitempty"`
+	}
+
+	type FooList struct {
+		Metadata bass.ListMetadata `json:"metadata"`
+		Items    []*Foo            `json:"items"`
+	}
+
+	// register foo resource type
+	{
+		rtd := &bass.ResourceTypeDefinition{
+			Metadata: bass.Metadata{
+				PackageName:  "test",
+				APIVersion:   "v1",
+				ResourceType: "Foo",
+				Name:         "foos.test",
+			},
+			Package:      "test",
+			ResourceType: "Foo",
+			Plural:       "foos",
+			Versions: []bass.ResourceTypeDefinitionVersion{
+				{
+					Name: "v1",
+					Schema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"bar": map[string]any{
+								"type": "integer",
+							},
+							"baz": map[string]any{
+								"type": "boolean",
+							},
+							"bad": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"bag": map[string]any{
+										"type": "string",
+									},
+								},
+							},
+							"bal": map[string]any{
+								"type": "string",
+							},
+						},
+						"required": []any{"baz"},
+					},
+				},
+			},
+		}
+
+		body := bytes.NewBuffer(nil)
+		enc := jsontext.NewEncoder(body)
+		err := json.MarshalEncode(enc, rtd)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/core/v1/resourcetypedefinitions", body)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusCreated, rec.Code)
+	}
+
 	// list empty repo
 	{
-		req := httptest.NewRequest(http.MethodGet, "/api/foos", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/test/v1/foos", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -28,26 +103,21 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
 
-		var res map[string]any
+		var res FooList
 
-		err := json.NewDecoder(rec.Body).Decode(&res)
+		dec := jsontext.NewDecoder(rec.Body)
+		err := json.UnmarshalDecode(dec, &res)
 		require.NoError(t, err)
 
-		items, ok := res["items"]
-
-		require.True(t, ok)
-		assert.NotNil(t, items)
-		assert.Empty(t, items)
-
-		kind, ok := res["kind"]
-		require.True(t, ok)
-		assert.Equal(t, "FooList", kind)
+		assert.NotNil(t, res.Items)
+		assert.Empty(t, res.Items)
+		assert.Equal(t, "FooList", res.Metadata.ResourceType)
 	}
 
 	// add item
 	{
-		body := bytes.NewBufferString(`{"name": "foo1", "bar": 1, "baz": true}`)
-		req := httptest.NewRequest(http.MethodPost, "/api/foos", body)
+		body := bytes.NewBufferString(`{"metadata": {"name": "foo1"}, "bar": 1, "baz": true}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/test/v1/foos", body)
 
 		rec := httptest.NewRecorder()
 
@@ -59,7 +129,7 @@ func TestAPI(t *testing.T) {
 
 	// list after add
 	{
-		req := httptest.NewRequest(http.MethodGet, "/api/foos", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/test/v1/foos", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -67,22 +137,20 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
 
-		var res map[string]any
+		var res FooList
 
-		err := json.NewDecoder(rec.Body).Decode(&res)
+		dec := jsontext.NewDecoder(rec.Body)
+		err := json.UnmarshalDecode(dec, &res)
 		require.NoError(t, err)
 
-		items, ok := res["items"]
-
-		require.True(t, ok)
-		assert.NotNil(t, items)
-		assert.Len(t, items, 1)
+		assert.NotNil(t, res.Items)
+		assert.Len(t, res.Items, 1)
 	}
 
 	// add duplicate item
 	{
-		body := bytes.NewBufferString(`{"name": "foo1", "bar": 1, "baz": true}`)
-		req := httptest.NewRequest(http.MethodPost, "/api/foos", body)
+		body := bytes.NewBufferString(`{"metadata": {"name": "foo1"}, "bar": 1, "baz": true}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/test/v1/foos", body)
 
 		rec := httptest.NewRecorder()
 
@@ -94,7 +162,7 @@ func TestAPI(t *testing.T) {
 	// add invalid item
 	{
 		body := bytes.NewBufferString(`[{"name": "foo1", "bar": 1, "baz": true}]`)
-		req := httptest.NewRequest(http.MethodPost, "/api/foos", body)
+		req := httptest.NewRequest(http.MethodPost, "/api/test/v1/foos", body)
 
 		rec := httptest.NewRecorder()
 
@@ -106,7 +174,7 @@ func TestAPI(t *testing.T) {
 	// add item without name
 	{
 		body := bytes.NewBufferString(`{"bar": 1, "baz": true}`)
-		req := httptest.NewRequest(http.MethodPost, "/api/foos", body)
+		req := httptest.NewRequest(http.MethodPost, "/api/test/v1/foos", body)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -116,7 +184,7 @@ func TestAPI(t *testing.T) {
 
 	// get item
 	{
-		req := httptest.NewRequest(http.MethodGet, "/api/foos/foo1", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/test/v1/foos/foo1", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -124,19 +192,21 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
 
-		var res map[string]any
+		var res Foo
 
-		err := json.NewDecoder(rec.Body).Decode(&res)
+		dec := jsontext.NewDecoder(rec.Body)
+		err := json.UnmarshalDecode(dec, &res)
 		require.NoError(t, err)
 
-		assert.Equal(t, "foo1", res["name"])
-		assert.EqualValues(t, 1, res["bar"])
-		assert.Equal(t, true, res["baz"])
+		assert.Equal(t, "foo1", res.Metadata.Name)
+		assert.NotNil(t, res.Bar)
+		assert.Equal(t, 1, *res.Bar)
+		assert.Equal(t, true, res.Baz)
 	}
 
 	// get unknown item
 	{
-		req := httptest.NewRequest(http.MethodGet, "/api/foos/foo404", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/test/v1/foos/foo404", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -146,8 +216,8 @@ func TestAPI(t *testing.T) {
 
 	// update item
 	{
-		body := bytes.NewBufferString(`{"name": "foo1", "bar": 2, "baz": false}`)
-		req := httptest.NewRequest(http.MethodPut, "/api/foos/foo1", body)
+		body := bytes.NewBufferString(`{"metadata": {"name": "foo1"}, "bar": 2, "baz": false}`)
+		req := httptest.NewRequest(http.MethodPut, "/api/test/v1/foos/foo1", body)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -155,20 +225,22 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
 
-		var res map[string]any
+		var res Foo
 
-		err := json.NewDecoder(rec.Body).Decode(&res)
+		dec := jsontext.NewDecoder(rec.Body)
+		err := json.UnmarshalDecode(dec, &res)
 		require.NoError(t, err)
 
-		assert.Equal(t, "foo1", res["name"])
-		assert.EqualValues(t, 2, res["bar"])
-		assert.Equal(t, false, res["baz"])
+		assert.Equal(t, "foo1", res.Metadata.Name)
+		assert.NotNil(t, res.Bar)
+		assert.EqualValues(t, 2, *res.Bar)
+		assert.Equal(t, false, res.Baz)
 	}
 
 	// update unknown item
 	{
-		body := bytes.NewBufferString(`{"name": "foo404", "bar": 2, "baz": false}`)
-		req := httptest.NewRequest(http.MethodPut, "/api/foos/foo404", body)
+		body := bytes.NewBufferString(`{"metadata": {"name": "foo404"}, "bar": 2, "baz": false}`)
+		req := httptest.NewRequest(http.MethodPut, "/api/test/v1/foos/foo404", body)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -178,8 +250,8 @@ func TestAPI(t *testing.T) {
 
 	// update invalid item
 	{
-		body := bytes.NewBufferString(`[{"name": "foo1", "bar": 2, "baz": true}]`)
-		req := httptest.NewRequest(http.MethodPut, "/api/foos/foo1", body)
+		body := bytes.NewBufferString(`[{ "metadata": {"name": "foo1"}, "bar": 2, "baz": true }]`)
+		req := httptest.NewRequest(http.MethodPut, "/api/test/v1/foos/foo1", body)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -190,7 +262,7 @@ func TestAPI(t *testing.T) {
 	// update item without name
 	{
 		body := bytes.NewBufferString(`{"bar": 3, "baz": true}`)
-		req := httptest.NewRequest(http.MethodPut, "/api/foos/foo1", body)
+		req := httptest.NewRequest(http.MethodPut, "/api/test/v1/foos/foo1", body)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -198,14 +270,16 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
 
-		var res map[string]any
+		var res Foo
 
-		err := json.NewDecoder(rec.Body).Decode(&res)
+		dec := jsontext.NewDecoder(rec.Body)
+		err := json.UnmarshalDecode(dec, &res)
 		require.NoError(t, err)
 
-		assert.Equal(t, "foo1", res["name"])
-		assert.EqualValues(t, 3, res["bar"])
-		assert.Equal(t, true, res["baz"])
+		assert.Equal(t, "foo1", res.Metadata.Name)
+		assert.NotNil(t, res.Bar)
+		assert.EqualValues(t, 3, *res.Bar)
+		assert.Equal(t, true, res.Baz)
 	}
 
 	// json patch item
@@ -215,7 +289,8 @@ func TestAPI(t *testing.T) {
 {"op": "add", "path": "/bad/bag", "value": "wiz"},
 {"op": "replace", "path": "/bar", "value": 4},{"op": "remove", "path": "/baz"}
 ]`)
-		req := httptest.NewRequest(http.MethodPatch, "/api/foos/foo1", body)
+
+		req := httptest.NewRequest(http.MethodPatch, "/api/test/v1/foos/foo1", body)
 		req.Header.Set("Content-Type", "application/json-patch+json")
 
 		rec := httptest.NewRecorder()
@@ -224,20 +299,23 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
 
-		var res map[string]any
+		var res Foo
 
-		err := json.NewDecoder(rec.Body).Decode(&res)
+		dec := jsontext.NewDecoder(rec.Body)
+		err := json.UnmarshalDecode(dec, &res)
 		require.NoError(t, err)
 
-		assert.Contains(t, res["bad"], "bag")
-		assert.EqualValues(t, 4, res["bar"])
-		assert.NotContains(t, res, "baz")
+		assert.NotNil(t, res.Bad)
+		assert.Equal(t, "wiz", res.Bad.Bag)
+		assert.NotNil(t, res.Bar)
+		assert.EqualValues(t, 4, *res.Bar)
+		assert.False(t, res.Baz)
 	}
 
 	// merge patch item
 	{
 		body := bytes.NewBufferString(`{"bal":"Bally", "bar": null}`)
-		req := httptest.NewRequest(http.MethodPatch, "/api/foos/foo1", body)
+		req := httptest.NewRequest(http.MethodPatch, "/api/test/v1/foos/foo1", body)
 		req.Header.Set("Content-Type", "application/merge-patch+json")
 
 		rec := httptest.NewRecorder()
@@ -246,20 +324,23 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
 
-		var res map[string]any
+		var res Foo
 
-		err := json.NewDecoder(rec.Body).Decode(&res)
+		dec := jsontext.NewDecoder(rec.Body)
+		err := json.UnmarshalDecode(dec, &res)
 		require.NoError(t, err)
 
-		assert.Contains(t, res["bad"], "bag")
-		assert.NotContains(t, res, "bar")
-		assert.Equal(t, "Bally", res["bal"])
+		assert.NotNil(t, res.Bad)
+		assert.Equal(t, "wiz", res.Bad.Bag)
+		assert.Nil(t, res.Bar)
+		assert.NotNil(t, res.Bal)
+		assert.Equal(t, "Bally", *res.Bal)
 	}
 
 	// unsupported patch item
 	{
 		body := bytes.NewBufferString(`{"bal":"Bally", "bar": null}`)
-		req := httptest.NewRequest(http.MethodPatch, "/api/foos/foo1", body)
+		req := httptest.NewRequest(http.MethodPatch, "/api/test/v1/foos/foo1", body)
 		req.Header.Set("Content-Type", "application/json")
 
 		rec := httptest.NewRecorder()
@@ -270,7 +351,7 @@ func TestAPI(t *testing.T) {
 
 	// delete item
 	{
-		req := httptest.NewRequest(http.MethodDelete, "/api/foos/foo1", nil)
+		req := httptest.NewRequest(http.MethodDelete, "/api/test/v1/foos/foo1", nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 
@@ -279,7 +360,7 @@ func TestAPI(t *testing.T) {
 
 	// list after delete
 	{
-		req := httptest.NewRequest(http.MethodGet, "/api/foos", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/test/v1/foos", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -287,21 +368,19 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json"))
 
-		var res map[string]any
+		var res FooList
 
-		err := json.NewDecoder(rec.Body).Decode(&res)
+		dec := jsontext.NewDecoder(rec.Body)
+		err := json.UnmarshalDecode(dec, &res)
 		require.NoError(t, err)
 
-		items, ok := res["items"]
-
-		require.True(t, ok)
-		assert.NotNil(t, items)
-		assert.Empty(t, items)
+		assert.NotNil(t, res.Items)
+		assert.Empty(t, res.Items)
 	}
 
 	// get deleted item
 	{
-		req := httptest.NewRequest(http.MethodGet, "/api/foos/foo1", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/test/v1/foos/foo1", nil)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -311,7 +390,7 @@ func TestAPI(t *testing.T) {
 
 	// delete unknown item
 	{
-		req := httptest.NewRequest(http.MethodDelete, "/api/foos/foo404", nil)
+		req := httptest.NewRequest(http.MethodDelete, "/api/test/v1/foos/foo404", nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 

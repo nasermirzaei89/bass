@@ -1,15 +1,18 @@
 package bass
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"time"
+
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/gertd/go-pluralize"
+	"github.com/google/uuid"
 	"github.com/nasermirzaei89/respond"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
-	"io"
-	"net/http"
 )
 
 type Handler struct {
@@ -39,21 +42,33 @@ func NewHandler(resourcesRepo ResourcesRepository) *Handler {
 }
 
 func (h *Handler) registerRoutes() {
-	h.mux.Handle("GET /api/{resourceKindPlural}", h.handleListResources())
-	h.mux.Handle("POST /api/{resourceKindPlural}", h.handleCreateResource())
-	h.mux.Handle("GET /api/{resourceKindPlural}/{name}", h.handleGetResource())
-	h.mux.Handle("PUT /api/{resourceKindPlural}/{name}", h.handleReplaceResource())
-	h.mux.Handle("PATCH /api/{resourceKindPlural}/{name}", h.handlePatchResource())
-	h.mux.Handle("DELETE /api/{resourceKindPlural}/{name}", h.handleDeleteResource())
+	h.mux.Handle("GET /api/{packageName}/{apiVersion}/{resourceTypePlural}", h.handleListResources())
+	h.mux.Handle("POST /api/{packageName}/{apiVersion}/{resourceTypePlural}", h.handleCreateResource())
+	h.mux.Handle("GET /api/{packageName}/{apiVersion}/{resourceTypePlural}/{name}", h.handleGetResource())
+	h.mux.Handle("PUT /api/{packageName}/{apiVersion}/{resourceTypePlural}/{name}", h.handleReplaceResource())
+	h.mux.Handle("PATCH /api/{packageName}/{apiVersion}/{resourceTypePlural}/{name}", h.handlePatchResource())
+	h.mux.Handle("DELETE /api/{packageName}/{apiVersion}/{resourceTypePlural}/{name}", h.handleDeleteResource())
 }
 
 func (h *Handler) handleListResources() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rkp := r.PathValue("resourceKindPlural")
-		itemKind := cases.Title(language.English).String(h.pluralizeClient.Singular(rkp))
+		packageName := r.PathValue("packageName")
+		apiVersion := r.PathValue("apiVersion")
+		resourceTypePlural := r.PathValue("resourceTypePlural")
 
-		res, err := h.repo.List(r.Context(), itemKind)
+		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
+			slog.Error("failed to get resource type definition", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		resourceType := resourceTypeDefinition.ResourceType
+
+		res, err := h.repo.List(r.Context(), packageName, apiVersion, resourceType)
+		if err != nil {
+			slog.Error("failed to list resources", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 
 			return
@@ -65,28 +80,50 @@ func (h *Handler) handleListResources() http.HandlerFunc {
 
 func (h *Handler) handleCreateResource() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rkp := r.PathValue("resourceKindPlural")
+		packageName := r.PathValue("packageName")
+		apiVersion := r.PathValue("apiVersion")
+		resourceTypePlural := r.PathValue("resourceTypePlural")
 
-		var item genericResource
-
-		err := json.NewDecoder(r.Body).Decode(&item)
+		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
+			slog.Error("failed to get resource type definition", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		dec := jsontext.NewDecoder(r.Body)
+
+		var item Resource
+
+		err = json.UnmarshalDecode(dec, &item)
+		if err != nil {
+			slog.Error("failed to decode request body", "error", err)
+
 			w.WriteHeader(http.StatusBadRequest)
 
 			return
 		}
 
-		if _, ok := item["name"]; !ok {
+		if item.Metadata.Name == "" {
+			slog.Error("resource item without name")
 			w.WriteHeader(http.StatusBadRequest)
-
 			return
 		}
 
-		itemKind := cases.Title(language.English).String(h.pluralizeClient.Singular(rkp))
-		item["kind"] = itemKind
+		item.Metadata.UID = uuid.NewString()
+		item.Metadata.PackageName = packageName
+		item.Metadata.APIVersion = apiVersion
+		item.Metadata.ResourceType = resourceTypeDefinition.ResourceType
+		item.Metadata.CreatedAt = time.Now()
+		item.Metadata.UpdatedAt = item.Metadata.CreatedAt
 
-		err = h.repo.Insert(r.Context(), item)
+		slog.Debug("creating resource", "item", item)
+
+		err = h.repo.Create(r.Context(), &item)
 		if err != nil {
+			slog.Error("failed to create resource", "error", err)
+
 			var resourceExistsError ResourceExistsError
 
 			switch {
@@ -106,12 +143,24 @@ func (h *Handler) handleCreateResource() http.HandlerFunc {
 
 func (h *Handler) handleGetResource() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rkp := r.PathValue("resourceKindPlural")
-		itemKind := cases.Title(language.English).String(h.pluralizeClient.Singular(rkp))
-		itemName := r.PathValue("name")
+		packageName := r.PathValue("packageName")
+		resourceTypePlural := r.PathValue("resourceTypePlural")
+		name := r.PathValue("name")
 
-		item, err := h.repo.Get(r.Context(), itemKind, itemName)
+		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
+			slog.Error("failed to get resource type definition", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		resourceType := resourceTypeDefinition.ResourceType
+
+		item, err := h.repo.Get(r.Context(), packageName, resourceType, name)
+		if err != nil {
+			slog.Error("failed to get resource", "error", err)
+
 			var resourceNotFoundError ResourceNotFoundError
 
 			switch {
@@ -130,24 +179,45 @@ func (h *Handler) handleGetResource() http.HandlerFunc {
 
 func (h *Handler) handleReplaceResource() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rkp := r.PathValue("resourceKindPlural")
-		itemKind := cases.Title(language.English).String(h.pluralizeClient.Singular(rkp))
-		itemName := r.PathValue("name")
+		packageName := r.PathValue("packageName")
+		apiVersion := r.PathValue("apiVersion")
+		resourceTypePlural := r.PathValue("resourceTypePlural")
+		name := r.PathValue("name")
 
-		var item genericResource
-
-		err := json.NewDecoder(r.Body).Decode(&item)
+		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
+			slog.Error("failed to get resource type definition", "error", err)
+
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		resourceType := resourceTypeDefinition.ResourceType
+
+		dec := jsontext.NewDecoder(r.Body)
+
+		var item Resource
+
+		err = json.UnmarshalDecode(dec, &item)
+		if err != nil {
+			slog.Error("failed to decode request body", "error", err)
+
 			w.WriteHeader(http.StatusBadRequest)
 
 			return
 		}
 
-		item["name"] = itemName
-		item["kind"] = itemKind
+		item.Metadata.PackageName = packageName
+		item.Metadata.APIVersion = apiVersion
+		item.Metadata.ResourceType = resourceType
+		item.Metadata.Name = name
+		item.Metadata.UpdatedAt = time.Now()
 
-		err = h.repo.Replace(r.Context(), item)
+		err = h.repo.Update(r.Context(), &item)
 		if err != nil {
+			slog.Error("failed to update resource", "error", err)
+
 			var resourceNotFoundError ResourceNotFoundError
 
 			switch {
@@ -179,12 +249,26 @@ func (h *Handler) handlePatchResource() http.HandlerFunc {
 
 func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rkp := r.PathValue("resourceKindPlural")
-		itemKind := cases.Title(language.English).String(h.pluralizeClient.Singular(rkp))
-		itemName := r.PathValue("name")
+		packageName := r.PathValue("packageName")
+		apiVersion := r.PathValue("apiVersion")
+		resourceTypePlural := r.PathValue("resourceTypePlural")
+		name := r.PathValue("name")
 
-		currentItem, err := h.repo.Get(r.Context(), itemKind, itemName)
+		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
+			slog.Error("failed to get resource type definition", "error", err)
+
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		resourceType := resourceTypeDefinition.ResourceType
+
+		currentItem, err := h.repo.Get(r.Context(), packageName, resourceType, name)
+		if err != nil {
+			slog.Error("failed to get current resource item", "error", err)
+
 			var resourceNotFoundError ResourceNotFoundError
 
 			switch {
@@ -199,6 +283,8 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
+			slog.Error("failed to read request body", "error", err)
+
 			w.WriteHeader(http.StatusBadRequest)
 
 			return
@@ -206,6 +292,8 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		patch, err := jsonpatch.DecodePatch(body)
 		if err != nil {
+			slog.Error("failed to decode JSON patch", "error", err)
+
 			w.WriteHeader(http.StatusBadRequest)
 
 			return
@@ -213,6 +301,8 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		original, err := json.Marshal(currentItem)
 		if err != nil {
+			slog.Error("failed to marshal original item", "error", err)
+
 			w.WriteHeader(http.StatusInternalServerError)
 
 			return
@@ -220,25 +310,32 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		modified, err := patch.Apply(original)
 		if err != nil {
+			slog.Error("failed to apply JSON patch", "error", err)
+
 			w.WriteHeader(http.StatusInternalServerError)
 
 			return
 		}
 
-		var newItem genericResource
+		var newItem Resource
 
 		err = json.Unmarshal(modified, &newItem)
 		if err != nil {
+			slog.Error("failed to unmarshal modified item", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 
 			return
 		}
 
-		newItem["name"] = itemName
-		newItem["kind"] = itemKind
+		newItem.Metadata.PackageName = packageName
+		newItem.Metadata.APIVersion = apiVersion
+		newItem.Metadata.ResourceType = resourceType
+		newItem.Metadata.Name = name
+		newItem.Metadata.UpdatedAt = time.Now()
 
-		err = h.repo.Replace(r.Context(), newItem)
+		err = h.repo.Update(r.Context(), &newItem)
 		if err != nil {
+			slog.Error("failed to update resource", "error", err)
 			var resourceNotFoundError ResourceNotFoundError
 
 			switch {
@@ -257,12 +354,24 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rkp := r.PathValue("resourceKindPlural")
-		itemKind := cases.Title(language.English).String(h.pluralizeClient.Singular(rkp))
-		itemName := r.PathValue("name")
+		packageName := r.PathValue("packageName")
+		apiVersion := r.PathValue("apiVersion")
+		resourceTypePlural := r.PathValue("resourceTypePlural")
+		name := r.PathValue("name")
 
-		currentItem, err := h.repo.Get(r.Context(), itemKind, itemName)
+		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
+			slog.Error("failed to get resource type definition", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		resourceType := resourceTypeDefinition.ResourceType
+
+		currentItem, err := h.repo.Get(r.Context(), packageName, resourceType, name)
+		if err != nil {
+			slog.Error("failed to get current resource item", "error", err)
 			var resourceNotFoundError ResourceNotFoundError
 
 			switch {
@@ -277,6 +386,7 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
+			slog.Error("failed to read request body", "error", err)
 			w.WriteHeader(http.StatusBadRequest)
 
 			return
@@ -284,6 +394,7 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 		original, err := json.Marshal(currentItem)
 		if err != nil {
+			slog.Error("failed to marshal original item", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 
 			return
@@ -291,25 +402,31 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 		modified, err := jsonpatch.MergePatch(original, body)
 		if err != nil {
+			slog.Error("failed to apply JSON merge patch", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 
 			return
 		}
 
-		var newItem genericResource
+		var newItem Resource
 
 		err = json.Unmarshal(modified, &newItem)
 		if err != nil {
+			slog.Error("failed to unmarshal modified item", "error", err)
 			w.WriteHeader(http.StatusInternalServerError)
 
 			return
 		}
 
-		newItem["name"] = itemName
-		newItem["kind"] = itemKind
+		newItem.Metadata.PackageName = packageName
+		newItem.Metadata.APIVersion = apiVersion
+		newItem.Metadata.ResourceType = resourceType
+		newItem.Metadata.Name = name
+		newItem.Metadata.UpdatedAt = time.Now()
 
-		err = h.repo.Replace(r.Context(), newItem)
+		err = h.repo.Update(r.Context(), &newItem)
 		if err != nil {
+			slog.Error("failed to update resource", "error", err)
 			var resourceNotFoundError ResourceNotFoundError
 
 			switch {
@@ -328,12 +445,23 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 func (h *Handler) handleDeleteResource() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rkp := r.PathValue("resourceKindPlural")
-		itemKind := cases.Title(language.English).String(h.pluralizeClient.Singular(rkp))
-		itemName := r.PathValue("name")
+		packageName := r.PathValue("packageName")
+		resourceTypePlural := r.PathValue("resourceTypePlural")
+		name := r.PathValue("name")
 
-		err := h.repo.Delete(r.Context(), itemKind, itemName)
+		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
+			slog.Error("failed to get resource type definition", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		resourceType := resourceTypeDefinition.ResourceType
+
+		err = h.repo.Delete(r.Context(), packageName, resourceType, name)
+		if err != nil {
+			slog.Error("failed to delete resource", "error", err)
 			var resourceNotFoundError ResourceNotFoundError
 
 			switch {

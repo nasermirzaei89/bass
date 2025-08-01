@@ -1,9 +1,11 @@
 package main
 
 import (
-	"fmt"
-	"github.com/nasermirzaei89/bass"
+	"log/slog"
 	"net/http"
+	"os"
+
+	"github.com/nasermirzaei89/bass"
 )
 
 func main() {
@@ -11,5 +13,8 @@ func main() {
 	h := bass.NewHandler(repo)
 
 	err := http.ListenAndServe(":8080", h) //nolint:gosec
-	panic(fmt.Errorf("error on listen and serve http: %w", err))
+	if err != nil {
+		slog.Error("error on listen and serve http", "error", err)
+		os.Exit(1)
+	}
 }

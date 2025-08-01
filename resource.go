@@ -8,111 +8,109 @@ import (
 	"sync"
 )
 
-type Resource interface {
-	Name() string
-	Kind() string
-}
-
-type genericResource map[string]any
-
-func (r genericResource) Name() string {
-	return r["name"].(string) //nolint:forcetypeassert
-}
-
-func (r genericResource) Kind() string {
-	return r["kind"].(string) //nolint:forcetypeassert
+type Resource struct {
+	Metadata   Metadata       `json:"metadata"`
+	Properties map[string]any `json:",inline"`
 }
 
 type ResourceList struct {
-	Kind  string     `json:"kind"`
-	Items []Resource `json:"items"`
+	Metadata ListMetadata `json:"metadata"`
+	Items    []*Resource  `json:"items"`
 }
 
 type ResourcesRepository interface {
-	List(ctx context.Context, itemKind string) (list ResourceList, err error)
-	Insert(ctx context.Context, item Resource) (err error)
-	Get(ctx context.Context, itemKind, itemName string) (item Resource, err error)
-	Replace(ctx context.Context, item Resource) (err error)
-	Delete(ctx context.Context, itemKind, itemName string) (err error)
+	List(ctx context.Context, packageName, apiVersion, resourceType string) (list ResourceList, err error)
+	Create(ctx context.Context, item *Resource) (err error)
+	Get(ctx context.Context, packageName, resourceType, name string) (item *Resource, err error)
+	Update(ctx context.Context, item *Resource) (err error)
+	Delete(ctx context.Context, packageName, resourceTypePlural, name string) (err error)
 }
 
 type ResourceExistsError struct {
-	Kind string
-	Name string
+	PackageName  string
+	ResourceType string
+	Name         string
 }
 
 func (err ResourceExistsError) Error() string {
-	return fmt.Sprintf("resource with name %q and kind %q already exists", err.Name, err.Kind)
+	return fmt.Sprintf("resource with name %q and resource type %q and package %q already exists", err.Name, err.ResourceType, err.PackageName)
 }
 
 type ResourceNotFoundError struct {
-	Kind string
-	Name string
+	PackageName  string
+	ResourceType string
+	Name         string
 }
 
 func (err ResourceNotFoundError) Error() string {
-	return fmt.Sprintf("resource with name %q and kind %q not found", err.Name, err.Kind)
+	return fmt.Sprintf("resource with name %q and resource type %q and package %q not found", err.Name, err.ResourceType, err.PackageName)
 }
 
 type MemRepo struct {
-	db map[string]Resource
+	db map[string]*Resource
 	sync.Mutex
 }
 
-func (repo *MemRepo) List(_ context.Context, itemKind string) (ResourceList, error) {
+func (repo *MemRepo) List(_ context.Context, packageName, apiVersion, resourceType string) (ResourceList, error) {
 	allItems := slices.Collect(maps.Values(repo.db))
 
-	kindItems := slices.Collect(func(yield func(Resource) bool) {
+	resourceItems := slices.Collect(func(yield func(*Resource) bool) {
 		for _, item := range allItems {
-			if item.Kind() == itemKind {
+			if item.Metadata.ResourceType == resourceType && item.Metadata.PackageName == packageName {
 				yield(item)
 			}
 		}
 	})
 
-	if kindItems == nil {
-		kindItems = make([]Resource, 0)
+	if resourceItems == nil {
+		resourceItems = make([]*Resource, 0)
 	}
 
 	res := ResourceList{
-		Kind:  itemKind + "List",
-		Items: kindItems,
+		Metadata: ListMetadata{
+			PackageName:  packageName,
+			APIVersion:   apiVersion,
+			ResourceType: resourceType + "List",
+		},
+		Items: resourceItems,
 	}
 
 	return res, nil
 }
 
-func (repo *MemRepo) put(item Resource) {
+func (repo *MemRepo) put(item *Resource) {
 	repo.Lock()
 	defer repo.Unlock()
 
-	repo.db[item.Kind()+"/"+item.Name()] = item
+	key := item.Metadata.PackageName + "/" + item.Metadata.ResourceType + "/" + item.Metadata.Name
+
+	repo.db[key] = item
 }
 
-func (repo *MemRepo) delete(itemKind string, itemName string) {
+func (repo *MemRepo) delete(packageName, resourceType, name string) {
 	repo.Lock()
 	defer repo.Unlock()
 
-	delete(repo.db, itemKind+"/"+itemName)
+	key := packageName + "/" + resourceType + "/" + name
+
+	delete(repo.db, key)
 }
 
-func (repo *MemRepo) get(itemKind string, itemName string) (Resource, bool) {
-	id := itemKind + "/" + itemName
+func (repo *MemRepo) get(packageName, resourceType, name string) (*Resource, bool) {
+	key := packageName + "/" + resourceType + "/" + name
 
-	item, ok := repo.db[id]
+	item, ok := repo.db[key]
 
 	return item, ok
 }
 
-func (repo *MemRepo) Insert(_ context.Context, item Resource) error {
-	itemName := item.Name()
-	itemKind := item.Kind()
-
-	_, ok := repo.get(itemKind, itemName)
+func (repo *MemRepo) Create(_ context.Context, item *Resource) error {
+	_, ok := repo.get(item.Metadata.PackageName, item.Metadata.ResourceType, item.Metadata.Name)
 	if ok {
 		return ResourceExistsError{
-			Kind: itemKind,
-			Name: itemName,
+			PackageName:  item.Metadata.PackageName,
+			ResourceType: item.Metadata.ResourceType,
+			Name:         item.Metadata.Name,
 		}
 	}
 
@@ -121,27 +119,26 @@ func (repo *MemRepo) Insert(_ context.Context, item Resource) error {
 	return nil
 }
 
-func (repo *MemRepo) Get(_ context.Context, itemKind, itemName string) (Resource, error) {
-	item, ok := repo.get(itemKind, itemName)
+func (repo *MemRepo) Get(_ context.Context, packageName, resourceType, name string) (*Resource, error) {
+	item, ok := repo.get(packageName, resourceType, name)
 	if !ok {
 		return nil, ResourceNotFoundError{
-			Kind: itemKind,
-			Name: itemName,
+			PackageName:  packageName,
+			ResourceType: resourceType,
+			Name:         name,
 		}
 	}
 
 	return item, nil
 }
 
-func (repo *MemRepo) Replace(_ context.Context, item Resource) error {
-	itemName := item.Name()
-	itemKind := item.Kind()
-
-	_, ok := repo.get(itemKind, itemName)
+func (repo *MemRepo) Update(_ context.Context, item *Resource) error {
+	_, ok := repo.get(item.Metadata.PackageName, item.Metadata.ResourceType, item.Metadata.Name)
 	if !ok {
 		return ResourceNotFoundError{
-			Kind: itemKind,
-			Name: itemName,
+			PackageName:  item.Metadata.PackageName,
+			ResourceType: item.Metadata.ResourceType,
+			Name:         item.Metadata.Name,
 		}
 	}
 
@@ -150,16 +147,17 @@ func (repo *MemRepo) Replace(_ context.Context, item Resource) error {
 	return nil
 }
 
-func (repo *MemRepo) Delete(_ context.Context, itemKind, itemName string) error {
-	_, ok := repo.get(itemKind, itemName)
+func (repo *MemRepo) Delete(_ context.Context, packageName, resourceType, name string) error {
+	_, ok := repo.get(packageName, resourceType, name)
 	if !ok {
 		return ResourceNotFoundError{
-			Kind: itemKind,
-			Name: itemName,
+			PackageName:  packageName,
+			ResourceType: resourceType,
+			Name:         name,
 		}
 	}
 
-	repo.delete(itemKind, itemName)
+	repo.delete(packageName, resourceType, name)
 
 	return nil
 }
@@ -168,7 +166,7 @@ var _ ResourcesRepository = (*MemRepo)(nil)
 
 func NewMemRepo() *MemRepo {
 	return &MemRepo{
-		db:    make(map[string]Resource),
+		db:    make(map[string]*Resource),
 		Mutex: sync.Mutex{},
 	}
 }

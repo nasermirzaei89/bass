@@ -1,13 +1,13 @@
 module github.com/nasermirzaei89/bass
 
-go 1.24.2
+go 1.25rc2
 
 require (
 	github.com/evanphx/json-patch v0.5.2
 	github.com/gertd/go-pluralize v0.2.1
+	github.com/google/uuid v1.6.0
 	github.com/nasermirzaei89/respond v0.0.0-20220127225024-0b74a5894695
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/text v0.23.0
 )
 
 require (
@@ -197,6 +197,7 @@ require (
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/sync v0.12.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/tools v0.31.0 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
