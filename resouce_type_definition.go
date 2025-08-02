@@ -18,6 +18,15 @@ type ResourceTypeDefinitionVersion struct {
 	Schema map[string]any `json:"schema"`
 }
 
+type ResourceTypeDefinitionNotFoundError struct {
+	PackageName        string
+	ResourceTypePlural string
+}
+
+func (err ResourceTypeDefinitionNotFoundError) Error() string {
+	return fmt.Sprintf("resource type definition not found for package %q and resource type %q", err.PackageName, err.ResourceTypePlural)
+}
+
 func (h *Handler) getResourceTypeDefinition(ctx context.Context, packageName, resourceTypePlural string) (*ResourceTypeDefinition, error) {
 	name := resourceTypePlural + "." + packageName
 
@@ -31,7 +40,10 @@ func (h *Handler) getResourceTypeDefinition(ctx context.Context, packageName, re
 
 	item, err := h.repo.Get(ctx, "core", "ResourceTypeDefinition", name)
 	if err != nil {
-		return nil, fmt.Errorf("resource type %q not found: %w", name, err)
+		return nil, ResourceTypeDefinitionNotFoundError{
+			PackageName:        packageName,
+			ResourceTypePlural: resourceTypePlural,
+		}
 	}
 
 	resourceTypeDefinition := &ResourceTypeDefinition{

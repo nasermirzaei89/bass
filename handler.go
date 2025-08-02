@@ -13,6 +13,7 @@ import (
 	"github.com/gertd/go-pluralize"
 	"github.com/google/uuid"
 	"github.com/nasermirzaei89/respond"
+	"github.com/xeipuuv/gojsonschema"
 )
 
 type Handler struct {
@@ -59,7 +60,13 @@ func (h *Handler) handleListResources() http.HandlerFunc {
 		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
 			slog.Error("failed to get resource type definition", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
+
+			switch {
+			case errors.As(err, &ResourceTypeDefinitionNotFoundError{}):
+				w.WriteHeader(http.StatusNotFound)
+			default:
+				w.WriteHeader(http.StatusInternalServerError)
+			}
 
 			return
 		}
@@ -107,6 +114,22 @@ func (h *Handler) handleCreateResource() http.HandlerFunc {
 
 		if item.Metadata.Name == "" {
 			slog.Error("resource item without name")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		itemLoader := gojsonschema.NewGoLoader(item.Properties)
+		schemaLoader := gojsonschema.NewGoLoader(resourceTypeDefinition.Versions[0].Schema)
+
+		result, err := gojsonschema.Validate(schemaLoader, itemLoader)
+		if err != nil {
+			slog.Error("failed to validate resource item", "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if !result.Valid() {
+			slog.Error("resource item is invalid", "errors", result.Errors())
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}

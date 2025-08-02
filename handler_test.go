@@ -74,7 +74,8 @@ func TestAPI(t *testing.T) {
 								"type": "string",
 							},
 						},
-						"required": []any{"baz"},
+						"required":             []any{"baz"},
+						"additionalProperties": false,
 					},
 				},
 			},
@@ -159,9 +160,21 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, http.StatusConflict, rec.Code)
 	}
 
-	// add invalid item
+	// add item with invalid metadata
 	{
 		body := bytes.NewBufferString(`[{"name": "foo1", "bar": 1, "baz": true}]`)
+		req := httptest.NewRequest(http.MethodPost, "/api/test/v1/foos", body)
+
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	}
+
+	// add item with invalid body
+	{
+		body := bytes.NewBufferString(`{"metadata": {"name": "foo2"}, "barr": 1, "baz": true}`)
 		req := httptest.NewRequest(http.MethodPost, "/api/test/v1/foos", body)
 
 		rec := httptest.NewRecorder()
@@ -391,6 +404,15 @@ func TestAPI(t *testing.T) {
 	// delete unknown item
 	{
 		req := httptest.NewRequest(http.MethodDelete, "/api/test/v1/foos/foo404", nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusNotFound, rec.Code)
+	}
+
+	// list not registered resource type
+	{
+		req := httptest.NewRequest(http.MethodGet, "/api/test/v1/bars", nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 
