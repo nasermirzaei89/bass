@@ -12,6 +12,7 @@ import (
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/gertd/go-pluralize"
 	"github.com/google/uuid"
+	"github.com/nasermirzaei89/problem"
 	"github.com/nasermirzaei89/respond"
 	"github.com/xeipuuv/gojsonschema"
 )
@@ -61,11 +62,13 @@ func (h *Handler) handleListResources() http.HandlerFunc {
 		if err != nil {
 			slog.Error("failed to get resource type definition", "error", err)
 
+			var resourceTypeDefinitionNotFoundError ResourceTypeDefinitionNotFoundError
+
 			switch {
-			case errors.As(err, &ResourceTypeDefinitionNotFoundError{}):
-				w.WriteHeader(http.StatusNotFound)
+			case errors.As(err, &resourceTypeDefinitionNotFoundError):
+				respond.Done(w, r, problem.NotFound(resourceTypeDefinitionNotFoundError.Error()))
 			default:
-				w.WriteHeader(http.StatusInternalServerError)
+				respond.Done(w, r, problem.InternalServerError(err))
 			}
 
 			return
@@ -76,7 +79,7 @@ func (h *Handler) handleListResources() http.HandlerFunc {
 		res, err := h.repo.List(r.Context(), packageName, apiVersion, resourceType)
 		if err != nil {
 			slog.Error("failed to list resources", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -94,7 +97,7 @@ func (h *Handler) handleCreateResource() http.HandlerFunc {
 		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
 			slog.Error("failed to get resource type definition", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -107,14 +110,21 @@ func (h *Handler) handleCreateResource() http.HandlerFunc {
 		if err != nil {
 			slog.Error("failed to decode request body", "error", err)
 
-			w.WriteHeader(http.StatusBadRequest)
+			var semanticError *json.SemanticError
+
+			switch {
+			case errors.As(err, &semanticError):
+				respond.Done(w, r, problem.BadRequest(semanticError.Error()))
+			default:
+				respond.Done(w, r, problem.InternalServerError(err))
+			}
 
 			return
 		}
 
 		if item.Metadata.Name == "" {
 			slog.Error("resource item without name")
-			w.WriteHeader(http.StatusBadRequest)
+			respond.Done(w, r, problem.BadRequest("resource item without name"))
 			return
 		}
 
@@ -124,13 +134,13 @@ func (h *Handler) handleCreateResource() http.HandlerFunc {
 		result, err := gojsonschema.Validate(schemaLoader, itemLoader)
 		if err != nil {
 			slog.Error("failed to validate resource item", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 			return
 		}
 
 		if !result.Valid() {
 			slog.Error("resource item is invalid", "errors", result.Errors())
-			w.WriteHeader(http.StatusBadRequest)
+			respond.Done(w, r, problem.BadRequest("resource item is invalid", problem.WithExtension("errors", result.Errors())))
 			return
 		}
 
@@ -151,9 +161,9 @@ func (h *Handler) handleCreateResource() http.HandlerFunc {
 
 			switch {
 			case errors.As(err, &resourceExistsError):
-				w.WriteHeader(http.StatusConflict)
+				respond.Done(w, r, problem.Conflict(resourceExistsError.Error()))
 			default:
-				w.WriteHeader(http.StatusInternalServerError)
+				respond.Done(w, r, problem.InternalServerError(err))
 			}
 
 			return
@@ -173,7 +183,7 @@ func (h *Handler) handleGetResource() http.HandlerFunc {
 		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
 			slog.Error("failed to get resource type definition", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -188,9 +198,9 @@ func (h *Handler) handleGetResource() http.HandlerFunc {
 
 			switch {
 			case errors.As(err, &resourceNotFoundError):
-				w.WriteHeader(http.StatusNotFound)
+				respond.Done(w, r, problem.NotFound(resourceNotFoundError.Error()))
 			default:
-				w.WriteHeader(http.StatusInternalServerError)
+				respond.Done(w, r, problem.InternalServerError(err))
 			}
 
 			return
@@ -211,7 +221,7 @@ func (h *Handler) handleReplaceResource() http.HandlerFunc {
 		if err != nil {
 			slog.Error("failed to get resource type definition", "error", err)
 
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -226,7 +236,12 @@ func (h *Handler) handleReplaceResource() http.HandlerFunc {
 		if err != nil {
 			slog.Error("failed to decode request body", "error", err)
 
-			w.WriteHeader(http.StatusBadRequest)
+			var semanticError *json.SemanticError
+			if errors.As(err, &semanticError) {
+				respond.Done(w, r, problem.BadRequest(semanticError.Error()))
+			} else {
+				respond.Done(w, r, problem.InternalServerError(err))
+			}
 
 			return
 		}
@@ -245,9 +260,9 @@ func (h *Handler) handleReplaceResource() http.HandlerFunc {
 
 			switch {
 			case errors.As(err, &resourceNotFoundError):
-				w.WriteHeader(http.StatusNotFound)
+				respond.Done(w, r, problem.NotFound(resourceNotFoundError.Error()))
 			default:
-				w.WriteHeader(http.StatusInternalServerError)
+				respond.Done(w, r, problem.InternalServerError(err))
 			}
 
 			return
@@ -265,7 +280,10 @@ func (h *Handler) handlePatchResource() http.HandlerFunc {
 		case "application/merge-patch+json":
 			h.handleMergePatchResource()(w, r)
 		default:
-			w.WriteHeader(http.StatusUnsupportedMediaType)
+			respond.Done(w, r, problem.CustomError(
+				problem.WithStatus(http.StatusUnsupportedMediaType),
+				problem.WithTitle("Unsupported Media Type"),
+			))
 		}
 	}
 }
@@ -281,7 +299,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 		if err != nil {
 			slog.Error("failed to get resource type definition", "error", err)
 
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -296,9 +314,9 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 			switch {
 			case errors.As(err, &resourceNotFoundError):
-				w.WriteHeader(http.StatusNotFound)
+				respond.Done(w, r, problem.NotFound(resourceNotFoundError.Error()))
 			default:
-				w.WriteHeader(http.StatusInternalServerError)
+				respond.Done(w, r, problem.InternalServerError(err))
 			}
 
 			return
@@ -308,7 +326,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 		if err != nil {
 			slog.Error("failed to read request body", "error", err)
 
-			w.WriteHeader(http.StatusBadRequest)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -317,7 +335,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 		if err != nil {
 			slog.Error("failed to decode JSON patch", "error", err)
 
-			w.WriteHeader(http.StatusBadRequest)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -326,7 +344,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 		if err != nil {
 			slog.Error("failed to marshal original item", "error", err)
 
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -335,7 +353,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 		if err != nil {
 			slog.Error("failed to apply JSON patch", "error", err)
 
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -345,7 +363,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 		err = json.Unmarshal(modified, &newItem)
 		if err != nil {
 			slog.Error("failed to unmarshal modified item", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -363,9 +381,9 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 			switch {
 			case errors.As(err, &resourceNotFoundError):
-				w.WriteHeader(http.StatusNotFound)
+				respond.Done(w, r, problem.NotFound(resourceNotFoundError.Error()))
 			default:
-				w.WriteHeader(http.StatusInternalServerError)
+				respond.Done(w, r, problem.InternalServerError(err))
 			}
 
 			return
@@ -385,7 +403,7 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
 			slog.Error("failed to get resource type definition", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -399,9 +417,9 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 			switch {
 			case errors.As(err, &resourceNotFoundError):
-				w.WriteHeader(http.StatusNotFound)
+				respond.Done(w, r, problem.NotFound(resourceNotFoundError.Error()))
 			default:
-				w.WriteHeader(http.StatusInternalServerError)
+				respond.Done(w, r, problem.InternalServerError(err))
 			}
 
 			return
@@ -410,7 +428,7 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			slog.Error("failed to read request body", "error", err)
-			w.WriteHeader(http.StatusBadRequest)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -418,7 +436,7 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 		original, err := json.Marshal(currentItem)
 		if err != nil {
 			slog.Error("failed to marshal original item", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -426,7 +444,7 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 		modified, err := jsonpatch.MergePatch(original, body)
 		if err != nil {
 			slog.Error("failed to apply JSON merge patch", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -436,7 +454,7 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 		err = json.Unmarshal(modified, &newItem)
 		if err != nil {
 			slog.Error("failed to unmarshal modified item", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -454,9 +472,9 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 			switch {
 			case errors.As(err, &resourceNotFoundError):
-				w.WriteHeader(http.StatusNotFound)
+				respond.Done(w, r, problem.NotFound(resourceNotFoundError.Error()))
 			default:
-				w.WriteHeader(http.StatusInternalServerError)
+				respond.Done(w, r, problem.InternalServerError(err))
 			}
 
 			return
@@ -475,7 +493,7 @@ func (h *Handler) handleDeleteResource() http.HandlerFunc {
 		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
 			slog.Error("failed to get resource type definition", "error", err)
-			w.WriteHeader(http.StatusInternalServerError)
+			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
 		}
@@ -489,9 +507,9 @@ func (h *Handler) handleDeleteResource() http.HandlerFunc {
 
 			switch {
 			case errors.As(err, &resourceNotFoundError):
-				w.WriteHeader(http.StatusNotFound)
+				respond.Done(w, r, problem.NotFound(resourceNotFoundError.Error()))
 			default:
-				w.WriteHeader(http.StatusInternalServerError)
+				respond.Done(w, r, problem.InternalServerError(err))
 			}
 
 			return

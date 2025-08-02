@@ -6,6 +6,7 @@ require (
 	github.com/evanphx/json-patch v0.5.2
 	github.com/gertd/go-pluralize v0.2.1
 	github.com/google/uuid v1.6.0
+	github.com/nasermirzaei89/problem v0.0.0-20231018193736-8c1b7af1ac18
 	github.com/nasermirzaei89/respond v0.0.0-20220127225024-0b74a5894695
 	github.com/stretchr/testify v1.10.0
 	github.com/xeipuuv/gojsonschema v1.2.0
