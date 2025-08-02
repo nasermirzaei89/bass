@@ -261,7 +261,7 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, rec.Code)
 	}
 
-	// update invalid item
+	// update invalid item structure
 	{
 		body := bytes.NewBufferString(`[{ "metadata": {"name": "foo1"}, "bar": 2, "baz": true }]`)
 		req := httptest.NewRequest(http.MethodPut, "/api/test/v1/foos/foo1", body)
@@ -270,6 +270,28 @@ func TestAPI(t *testing.T) {
 		h.ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	}
+
+	// update item with invalid body
+	{
+		body := bytes.NewBufferString(`{"metadata": {"name": "foo1"}, "barr": 3, "baz": true}`)
+		req := httptest.NewRequest(http.MethodPut, "/api/test/v1/foos/foo1", body)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	}
+
+	// update item without name
+	{
+		body := bytes.NewBufferString(`{"bar": 3, "baz": true}`)
+		req := httptest.NewRequest(http.MethodPut, "/api/test/v1/foos/foo1", body)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
 	}
 
 	// update item without name
@@ -300,7 +322,7 @@ func TestAPI(t *testing.T) {
 		body := bytes.NewBufferString(`[
 {"op": "add", "path": "/bad", "value": {}},
 {"op": "add", "path": "/bad/bag", "value": "wiz"},
-{"op": "replace", "path": "/bar", "value": 4},{"op": "remove", "path": "/baz"}
+{"op": "replace", "path": "/bar", "value": 4}
 ]`)
 
 		req := httptest.NewRequest(http.MethodPatch, "/api/test/v1/foos/foo1", body)
@@ -322,7 +344,6 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, "wiz", res.Bad.Bag)
 		assert.NotNil(t, res.Bar)
 		assert.EqualValues(t, 4, *res.Bar)
-		assert.False(t, res.Baz)
 	}
 
 	// merge patch item

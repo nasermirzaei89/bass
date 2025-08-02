@@ -246,6 +246,22 @@ func (h *Handler) handleReplaceResource() http.HandlerFunc {
 			return
 		}
 
+		itemLoader := gojsonschema.NewGoLoader(item.Properties)
+		schemaLoader := gojsonschema.NewGoLoader(resourceTypeDefinition.Versions[0].Schema)
+
+		result, err := gojsonschema.Validate(schemaLoader, itemLoader)
+		if err != nil {
+			slog.Error("failed to validate resource item", "error", err)
+			respond.Done(w, r, problem.InternalServerError(err))
+			return
+		}
+
+		if !result.Valid() {
+			slog.Error("resource item is invalid", "errors", result.Errors())
+			respond.Done(w, r, problem.BadRequest("resource item is invalid", problem.WithExtension("errors", result.Errors())))
+			return
+		}
+
 		item.Metadata.PackageName = packageName
 		item.Metadata.APIVersion = apiVersion
 		item.Metadata.ResourceType = resourceType
@@ -368,6 +384,22 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 			return
 		}
 
+		itemLoader := gojsonschema.NewGoLoader(newItem.Properties)
+		schemaLoader := gojsonschema.NewGoLoader(resourceTypeDefinition.Versions[0].Schema)
+
+		result, err := gojsonschema.Validate(schemaLoader, itemLoader)
+		if err != nil {
+			slog.Error("failed to validate resource item", "error", err)
+			respond.Done(w, r, problem.InternalServerError(err))
+			return
+		}
+
+		if !result.Valid() {
+			slog.Error("resource item is invalid", "errors", result.Errors())
+			respond.Done(w, r, problem.BadRequest("resource item is invalid", problem.WithExtension("errors", result.Errors())))
+			return
+		}
+
 		newItem.Metadata.PackageName = packageName
 		newItem.Metadata.APIVersion = apiVersion
 		newItem.Metadata.ResourceType = resourceType
@@ -456,6 +488,22 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 			slog.Error("failed to unmarshal modified item", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
 
+			return
+		}
+
+		itemLoader := gojsonschema.NewGoLoader(newItem.Properties)
+		schemaLoader := gojsonschema.NewGoLoader(resourceTypeDefinition.Versions[0].Schema)
+
+		result, err := gojsonschema.Validate(schemaLoader, itemLoader)
+		if err != nil {
+			slog.Error("failed to validate resource item", "error", err)
+			respond.Done(w, r, problem.InternalServerError(err))
+			return
+		}
+
+		if !result.Valid() {
+			slog.Error("resource item is invalid", "errors", result.Errors())
+			respond.Done(w, r, problem.BadRequest("resource item is invalid", problem.WithExtension("errors", result.Errors())))
 			return
 		}
 
