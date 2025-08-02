@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,7 +15,7 @@ func main() {
 
 	err := http.ListenAndServe(":8080", h) //nolint:gosec
 	if err != nil {
-		slog.Error("error on listen and serve http", "error", err)
+		slog.ErrorContext(context.Background(), "error on listen and serve http", "error", err)
 		os.Exit(1)
 	}
 }

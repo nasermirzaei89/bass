@@ -23,24 +23,24 @@ type Handler struct {
 	pluralizeClient *pluralize.Client
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.mux.ServeHTTP(w, r)
-}
-
 var _ http.Handler = (*Handler)(nil)
 
 func NewHandler(resourcesRepo ResourcesRepository) *Handler {
 	mux := http.NewServeMux()
 
-	h := &Handler{
+	handler := &Handler{
 		mux:             mux,
 		repo:            resourcesRepo,
 		pluralizeClient: pluralize.NewClient(),
 	}
 
-	h.registerRoutes()
+	handler.registerRoutes()
 
-	return h
+	return handler
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mux.ServeHTTP(w, r)
 }
 
 func (h *Handler) registerRoutes() {
@@ -60,7 +60,7 @@ func (h *Handler) handleListResources() http.HandlerFunc {
 
 		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
-			slog.Error("failed to get resource type definition", "error", err)
+			slog.ErrorContext(r.Context(), "failed to get resource type definition", "error", err)
 
 			var resourceTypeDefinitionNotFoundError ResourceTypeDefinitionNotFoundError
 
@@ -78,7 +78,7 @@ func (h *Handler) handleListResources() http.HandlerFunc {
 
 		res, err := h.repo.List(r.Context(), packageName, apiVersion, resourceType)
 		if err != nil {
-			slog.Error("failed to list resources", "error", err)
+			slog.ErrorContext(r.Context(), "failed to list resources", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
@@ -96,7 +96,7 @@ func (h *Handler) handleCreateResource() http.HandlerFunc {
 
 		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
-			slog.Error("failed to get resource type definition", "error", err)
+			slog.ErrorContext(r.Context(), "failed to get resource type definition", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
@@ -108,7 +108,7 @@ func (h *Handler) handleCreateResource() http.HandlerFunc {
 
 		err = json.UnmarshalDecode(dec, &item)
 		if err != nil {
-			slog.Error("failed to decode request body", "error", err)
+			slog.ErrorContext(r.Context(), "failed to decode request body", "error", err)
 
 			var semanticError *json.SemanticError
 
@@ -123,8 +123,9 @@ func (h *Handler) handleCreateResource() http.HandlerFunc {
 		}
 
 		if item.Metadata.Name == "" {
-			slog.Error("resource item without name")
+			slog.ErrorContext(r.Context(), "resource item without name")
 			respond.Done(w, r, problem.BadRequest("resource item without name"))
+
 			return
 		}
 
@@ -133,14 +134,16 @@ func (h *Handler) handleCreateResource() http.HandlerFunc {
 
 		result, err := gojsonschema.Validate(schemaLoader, itemLoader)
 		if err != nil {
-			slog.Error("failed to validate resource item", "error", err)
+			slog.ErrorContext(r.Context(), "failed to validate resource item", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
+
 			return
 		}
 
 		if !result.Valid() {
-			slog.Error("resource item is invalid", "errors", result.Errors())
+			slog.ErrorContext(r.Context(), "resource item is invalid", "errors", result.Errors())
 			respond.Done(w, r, problem.BadRequest("resource item is invalid", problem.WithExtension("errors", result.Errors())))
+
 			return
 		}
 
@@ -151,11 +154,11 @@ func (h *Handler) handleCreateResource() http.HandlerFunc {
 		item.Metadata.CreatedAt = time.Now()
 		item.Metadata.UpdatedAt = item.Metadata.CreatedAt
 
-		slog.Debug("creating resource", "item", item)
+		slog.DebugContext(r.Context(), "creating resource", "item", item)
 
 		err = h.repo.Create(r.Context(), &item)
 		if err != nil {
-			slog.Error("failed to create resource", "error", err)
+			slog.ErrorContext(r.Context(), "failed to create resource", "error", err)
 
 			var resourceExistsError ResourceExistsError
 
@@ -182,7 +185,7 @@ func (h *Handler) handleGetResource() http.HandlerFunc {
 
 		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
-			slog.Error("failed to get resource type definition", "error", err)
+			slog.ErrorContext(r.Context(), "failed to get resource type definition", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
@@ -192,7 +195,7 @@ func (h *Handler) handleGetResource() http.HandlerFunc {
 
 		item, err := h.repo.Get(r.Context(), packageName, resourceType, name)
 		if err != nil {
-			slog.Error("failed to get resource", "error", err)
+			slog.ErrorContext(r.Context(), "failed to get resource", "error", err)
 
 			var resourceNotFoundError ResourceNotFoundError
 
@@ -219,7 +222,7 @@ func (h *Handler) handleReplaceResource() http.HandlerFunc {
 
 		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
-			slog.Error("failed to get resource type definition", "error", err)
+			slog.ErrorContext(r.Context(), "failed to get resource type definition", "error", err)
 
 			respond.Done(w, r, problem.InternalServerError(err))
 
@@ -234,7 +237,7 @@ func (h *Handler) handleReplaceResource() http.HandlerFunc {
 
 		err = json.UnmarshalDecode(dec, &item)
 		if err != nil {
-			slog.Error("failed to decode request body", "error", err)
+			slog.ErrorContext(r.Context(), "failed to decode request body", "error", err)
 
 			var semanticError *json.SemanticError
 			if errors.As(err, &semanticError) {
@@ -251,14 +254,16 @@ func (h *Handler) handleReplaceResource() http.HandlerFunc {
 
 		result, err := gojsonschema.Validate(schemaLoader, itemLoader)
 		if err != nil {
-			slog.Error("failed to validate resource item", "error", err)
+			slog.ErrorContext(r.Context(), "failed to validate resource item", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
+
 			return
 		}
 
 		if !result.Valid() {
-			slog.Error("resource item is invalid", "errors", result.Errors())
+			slog.ErrorContext(r.Context(), "resource item is invalid", "errors", result.Errors())
 			respond.Done(w, r, problem.BadRequest("resource item is invalid", problem.WithExtension("errors", result.Errors())))
+
 			return
 		}
 
@@ -270,7 +275,7 @@ func (h *Handler) handleReplaceResource() http.HandlerFunc {
 
 		err = h.repo.Update(r.Context(), &item)
 		if err != nil {
-			slog.Error("failed to update resource", "error", err)
+			slog.ErrorContext(r.Context(), "failed to update resource", "error", err)
 
 			var resourceNotFoundError ResourceNotFoundError
 
@@ -313,7 +318,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
-			slog.Error("failed to get resource type definition", "error", err)
+			slog.ErrorContext(r.Context(), "failed to get resource type definition", "error", err)
 
 			respond.Done(w, r, problem.InternalServerError(err))
 
@@ -324,7 +329,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		currentItem, err := h.repo.Get(r.Context(), packageName, resourceType, name)
 		if err != nil {
-			slog.Error("failed to get current resource item", "error", err)
+			slog.ErrorContext(r.Context(), "failed to get current resource item", "error", err)
 
 			var resourceNotFoundError ResourceNotFoundError
 
@@ -340,7 +345,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			slog.Error("failed to read request body", "error", err)
+			slog.ErrorContext(r.Context(), "failed to read request body", "error", err)
 
 			respond.Done(w, r, problem.InternalServerError(err))
 
@@ -349,7 +354,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		patch, err := jsonpatch.DecodePatch(body)
 		if err != nil {
-			slog.Error("failed to decode JSON patch", "error", err)
+			slog.ErrorContext(r.Context(), "failed to decode JSON patch", "error", err)
 
 			respond.Done(w, r, problem.InternalServerError(err))
 
@@ -358,7 +363,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		original, err := json.Marshal(currentItem)
 		if err != nil {
-			slog.Error("failed to marshal original item", "error", err)
+			slog.ErrorContext(r.Context(), "failed to marshal original item", "error", err)
 
 			respond.Done(w, r, problem.InternalServerError(err))
 
@@ -367,7 +372,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		modified, err := patch.Apply(original)
 		if err != nil {
-			slog.Error("failed to apply JSON patch", "error", err)
+			slog.ErrorContext(r.Context(), "failed to apply JSON patch", "error", err)
 
 			respond.Done(w, r, problem.InternalServerError(err))
 
@@ -378,7 +383,7 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		err = json.Unmarshal(modified, &newItem)
 		if err != nil {
-			slog.Error("failed to unmarshal modified item", "error", err)
+			slog.ErrorContext(r.Context(), "failed to unmarshal modified item", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
@@ -389,14 +394,16 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		result, err := gojsonschema.Validate(schemaLoader, itemLoader)
 		if err != nil {
-			slog.Error("failed to validate resource item", "error", err)
+			slog.ErrorContext(r.Context(), "failed to validate resource item", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
+
 			return
 		}
 
 		if !result.Valid() {
-			slog.Error("resource item is invalid", "errors", result.Errors())
+			slog.ErrorContext(r.Context(), "resource item is invalid", "errors", result.Errors())
 			respond.Done(w, r, problem.BadRequest("resource item is invalid", problem.WithExtension("errors", result.Errors())))
+
 			return
 		}
 
@@ -408,7 +415,8 @@ func (h *Handler) handleJSONPatchResource() http.HandlerFunc {
 
 		err = h.repo.Update(r.Context(), &newItem)
 		if err != nil {
-			slog.Error("failed to update resource", "error", err)
+			slog.ErrorContext(r.Context(), "failed to update resource", "error", err)
+
 			var resourceNotFoundError ResourceNotFoundError
 
 			switch {
@@ -434,7 +442,7 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
-			slog.Error("failed to get resource type definition", "error", err)
+			slog.ErrorContext(r.Context(), "failed to get resource type definition", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
@@ -444,7 +452,8 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 		currentItem, err := h.repo.Get(r.Context(), packageName, resourceType, name)
 		if err != nil {
-			slog.Error("failed to get current resource item", "error", err)
+			slog.ErrorContext(r.Context(), "failed to get current resource item", "error", err)
+
 			var resourceNotFoundError ResourceNotFoundError
 
 			switch {
@@ -459,7 +468,7 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			slog.Error("failed to read request body", "error", err)
+			slog.ErrorContext(r.Context(), "failed to read request body", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
@@ -467,7 +476,7 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 		original, err := json.Marshal(currentItem)
 		if err != nil {
-			slog.Error("failed to marshal original item", "error", err)
+			slog.ErrorContext(r.Context(), "failed to marshal original item", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
@@ -475,7 +484,7 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 		modified, err := jsonpatch.MergePatch(original, body)
 		if err != nil {
-			slog.Error("failed to apply JSON merge patch", "error", err)
+			slog.ErrorContext(r.Context(), "failed to apply JSON merge patch", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
@@ -485,7 +494,7 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 		err = json.Unmarshal(modified, &newItem)
 		if err != nil {
-			slog.Error("failed to unmarshal modified item", "error", err)
+			slog.ErrorContext(r.Context(), "failed to unmarshal modified item", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
@@ -496,14 +505,16 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 		result, err := gojsonschema.Validate(schemaLoader, itemLoader)
 		if err != nil {
-			slog.Error("failed to validate resource item", "error", err)
+			slog.ErrorContext(r.Context(), "failed to validate resource item", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
+
 			return
 		}
 
 		if !result.Valid() {
-			slog.Error("resource item is invalid", "errors", result.Errors())
+			slog.ErrorContext(r.Context(), "resource item is invalid", "errors", result.Errors())
 			respond.Done(w, r, problem.BadRequest("resource item is invalid", problem.WithExtension("errors", result.Errors())))
+
 			return
 		}
 
@@ -515,7 +526,8 @@ func (h *Handler) handleMergePatchResource() http.HandlerFunc {
 
 		err = h.repo.Update(r.Context(), &newItem)
 		if err != nil {
-			slog.Error("failed to update resource", "error", err)
+			slog.ErrorContext(r.Context(), "failed to update resource", "error", err)
+
 			var resourceNotFoundError ResourceNotFoundError
 
 			switch {
@@ -540,7 +552,7 @@ func (h *Handler) handleDeleteResource() http.HandlerFunc {
 
 		resourceTypeDefinition, err := h.getResourceTypeDefinition(r.Context(), packageName, resourceTypePlural)
 		if err != nil {
-			slog.Error("failed to get resource type definition", "error", err)
+			slog.ErrorContext(r.Context(), "failed to get resource type definition", "error", err)
 			respond.Done(w, r, problem.InternalServerError(err))
 
 			return
@@ -550,7 +562,8 @@ func (h *Handler) handleDeleteResource() http.HandlerFunc {
 
 		err = h.repo.Delete(r.Context(), packageName, resourceType, name)
 		if err != nil {
-			slog.Error("failed to delete resource", "error", err)
+			slog.ErrorContext(r.Context(), "failed to delete resource", "error", err)
+
 			var resourceNotFoundError ResourceNotFoundError
 
 			switch {

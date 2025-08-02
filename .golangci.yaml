@@ -7,11 +7,14 @@ run:
 linters:
   default: all
   disable:
+    - wsl
+    - cyclop
     - depguard
-    - ireturn
-    - nolintlint
-    - paralleltest
-    - tparallel
+    - err113
+    - exhaustruct
+    - forcetypeassert
+    - funlen
+    - lll
     - varnamelen
   settings:
     cyclop:

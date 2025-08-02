@@ -16,6 +16,8 @@ import (
 )
 
 func TestAPI(t *testing.T) {
+	t.Parallel()
+
 	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	repo := bass.NewMemRepo()
@@ -88,6 +90,7 @@ func TestAPI(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodPost, "/api/core/v1/resourcetypedefinitions", body)
 		req.Header.Set("Content-Type", "application/json")
+
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 
@@ -214,7 +217,7 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, "foo1", res.Metadata.Name)
 		assert.NotNil(t, res.Bar)
 		assert.Equal(t, 1, *res.Bar)
-		assert.Equal(t, true, res.Baz)
+		assert.True(t, res.Baz)
 	}
 
 	// get unknown item
@@ -246,8 +249,8 @@ func TestAPI(t *testing.T) {
 
 		assert.Equal(t, "foo1", res.Metadata.Name)
 		assert.NotNil(t, res.Bar)
-		assert.EqualValues(t, 2, *res.Bar)
-		assert.Equal(t, false, res.Baz)
+		assert.Equal(t, 2, *res.Bar)
+		assert.False(t, res.Baz)
 	}
 
 	// update unknown item
@@ -313,8 +316,8 @@ func TestAPI(t *testing.T) {
 
 		assert.Equal(t, "foo1", res.Metadata.Name)
 		assert.NotNil(t, res.Bar)
-		assert.EqualValues(t, 3, *res.Bar)
-		assert.Equal(t, true, res.Baz)
+		assert.Equal(t, 3, *res.Bar)
+		assert.True(t, res.Baz)
 	}
 
 	// json patch item
@@ -343,7 +346,7 @@ func TestAPI(t *testing.T) {
 		assert.NotNil(t, res.Bad)
 		assert.Equal(t, "wiz", res.Bad.Bag)
 		assert.NotNil(t, res.Bar)
-		assert.EqualValues(t, 4, *res.Bar)
+		assert.Equal(t, 4, *res.Bar)
 	}
 
 	// merge patch item

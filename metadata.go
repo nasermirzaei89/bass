@@ -13,7 +13,7 @@ type Metadata struct {
 }
 
 type ListMetadata struct {
-	PackageName  string    `json:"packageName"`
-	APIVersion   string    `json:"apiVersion"`
-	ResourceType string    `json:"resourceType"`
+	PackageName  string `json:"packageName"`
+	APIVersion   string `json:"apiVersion"`
+	ResourceType string `json:"resourceType"`
 }

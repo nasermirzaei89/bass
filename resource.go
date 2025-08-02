@@ -47,8 +47,18 @@ func (err ResourceNotFoundError) Error() string {
 }
 
 type MemRepo struct {
-	db map[string]*Resource
 	sync.Mutex
+
+	db map[string]*Resource
+}
+
+var _ ResourcesRepository = (*MemRepo)(nil)
+
+func NewMemRepo() *MemRepo {
+	return &MemRepo{
+		db:    make(map[string]*Resource),
+		Mutex: sync.Mutex{},
+	}
 }
 
 func (repo *MemRepo) List(_ context.Context, packageName, apiVersion, resourceType string) (ResourceList, error) {
@@ -76,32 +86,6 @@ func (repo *MemRepo) List(_ context.Context, packageName, apiVersion, resourceTy
 	}
 
 	return res, nil
-}
-
-func (repo *MemRepo) put(item *Resource) {
-	repo.Lock()
-	defer repo.Unlock()
-
-	key := item.Metadata.PackageName + "/" + item.Metadata.ResourceType + "/" + item.Metadata.Name
-
-	repo.db[key] = item
-}
-
-func (repo *MemRepo) delete(packageName, resourceType, name string) {
-	repo.Lock()
-	defer repo.Unlock()
-
-	key := packageName + "/" + resourceType + "/" + name
-
-	delete(repo.db, key)
-}
-
-func (repo *MemRepo) get(packageName, resourceType, name string) (*Resource, bool) {
-	key := packageName + "/" + resourceType + "/" + name
-
-	item, ok := repo.db[key]
-
-	return item, ok
 }
 
 func (repo *MemRepo) Create(_ context.Context, item *Resource) error {
@@ -162,11 +146,28 @@ func (repo *MemRepo) Delete(_ context.Context, packageName, resourceType, name s
 	return nil
 }
 
-var _ ResourcesRepository = (*MemRepo)(nil)
+func (repo *MemRepo) put(item *Resource) {
+	repo.Lock()
+	defer repo.Unlock()
 
-func NewMemRepo() *MemRepo {
-	return &MemRepo{
-		db:    make(map[string]*Resource),
-		Mutex: sync.Mutex{},
-	}
+	key := item.Metadata.PackageName + "/" + item.Metadata.ResourceType + "/" + item.Metadata.Name
+
+	repo.db[key] = item
+}
+
+func (repo *MemRepo) delete(packageName, resourceType, name string) {
+	repo.Lock()
+	defer repo.Unlock()
+
+	key := packageName + "/" + resourceType + "/" + name
+
+	delete(repo.db, key)
+}
+
+func (repo *MemRepo) get(packageName, resourceType, name string) (*Resource, bool) {
+	key := packageName + "/" + resourceType + "/" + name
+
+	item, ok := repo.db[key]
+
+	return item, ok
 }
